@@ -15,19 +15,20 @@ type Volume struct {
     mutex      *sync.Mutex
 }
 
-func NewVolume(id uint8, references *os.File, blocks *os.File, lock *sync.Mutex) *Volume {
+func NewVolume(id uint8, references *os.File, blocks *os.File, mutex *sync.Mutex) *Volume {
     return &Volume{
         id:         id,
         references: references,
         blocks:     blocks,
-        mutex:      lock,
+        mutex:      mutex,
     }
 }
 
-func (v *Volume) Read(id uint16) ([]byte, error) {
+func (v Volume) Read(id uint16) ([]byte, error) {
     v.mutex.Lock()
     defer v.mutex.Unlock()
 
+    // Read the reference.
     ref, err := v.readReference(id)
     if err != nil {
         return nil, err
@@ -36,6 +37,7 @@ func (v *Volume) Read(id uint16) ([]byte, error) {
     length := uint32(ref.length)
     buffer := make([]byte, length)
 
+    // Begin reading the entry.
     blockId := ref.blockId
     offset := uint32(0)
     for part := uint16(0); offset < length; part++ {
@@ -48,12 +50,14 @@ func (v *Volume) Read(id uint16) ([]byte, error) {
             return nil, err
         }
 
+        // Validate the block to make sure the entry is not corrupted or invalid.
         if err := block.Validate(v.id, id, part); err != nil {
             return nil, err
         }
 
         blockId = block.nextBlockId
 
+        // Determine how many bytes to read this pass.
         read := length - offset
         if read > BytesPerBlock {
             read = BytesPerBlock
@@ -66,10 +70,12 @@ func (v *Volume) Read(id uint16) ([]byte, error) {
     return buffer, nil
 }
 
-func (v *Volume) Write(id uint16, buffer []byte) error {
+func (v Volume) Write(id uint16, buffer []byte) error {
     v.mutex.Lock()
     defer v.mutex.Unlock()
 
+    // First attempt to overwrite the entry if it exists and is valid,
+    // otherwise append the entry.
     if err := v.write(id, buffer, true); err != nil {
         return v.write(id, buffer, false)
     }
@@ -77,9 +83,10 @@ func (v *Volume) Write(id uint16, buffer []byte) error {
     return nil
 }
 
-func (v *Volume) write(id uint16, buffer []byte, overwrite bool) error {
+func (v Volume) write(id uint16, buffer []byte, overwrite bool) error {
     length := uint32(len(buffer))
 
+    // Determine the next block identifier depending if we are overwriting the entry.
     var blockId uint32
     if overwrite {
         ref, err := v.readReference(id)
@@ -104,6 +111,7 @@ func (v *Volume) write(id uint16, buffer []byte, overwrite bool) error {
         blockId = nextBlockId
     }
 
+    // Update the reference.
     if err := v.writeReference(Reference{
         id:      id,
         length:  length,
@@ -112,10 +120,13 @@ func (v *Volume) write(id uint16, buffer []byte, overwrite bool) error {
         return err
     }
 
+    // Begin writing the entry.
     offset := uint32(0)
     for part := uint16(0); offset < length; part++ {
         nextBlockId := uint32(EndOfEntry)
 
+        // If we are overwriting, determine the next block identifier and check that
+        // the block/next block is valid.
         if overwrite {
             block, err := v.readBlock(blockId)
             if err != nil {
@@ -136,9 +147,10 @@ func (v *Volume) write(id uint16, buffer []byte, overwrite bool) error {
             nextBlockId = block.nextBlockId
         }
 
+        // Special case when we are not overwriting and or we reached
+        // the end of the entry. Determine the next block identifier
+        // from the end of the blocks file.
         if nextBlockId == EndOfEntry {
-            overwrite = false
-
             freeBlockId, err := v.nextBlockId()
             if err != nil {
                 return err
@@ -149,8 +161,10 @@ func (v *Volume) write(id uint16, buffer []byte, overwrite bool) error {
             }
 
             nextBlockId = freeBlockId
+            overwrite = false
         }
 
+        // Determine how many bytes we are writing this pass.
         write := length - offset
         if write <= BytesPerBlock {
             nextBlockId = EndOfEntry
@@ -160,6 +174,7 @@ func (v *Volume) write(id uint16, buffer []byte, overwrite bool) error {
             write = BytesPerBlock
         }
 
+        // Write the block.
         err := v.writeBlock(Block{
             id:          blockId,
             volumeId:    v.id,
@@ -180,7 +195,7 @@ func (v *Volume) write(id uint16, buffer []byte, overwrite bool) error {
     return nil
 }
 
-func (v *Volume) readReference(id uint16) (Reference, error) {
+func (v Volume) readReference(id uint16) (Reference, error) {
     if _, err := v.references.Seek(int64(id*ReferenceLength), 0); err != nil {
         return Reference{}, err
     }
@@ -197,7 +212,7 @@ func (v *Volume) readReference(id uint16) (Reference, error) {
     }, nil
 }
 
-func (v *Volume) writeReference(ref Reference) error {
+func (v Volume) writeReference(ref Reference) error {
     if _, err := v.references.Seek(int64(ref.id*ReferenceLength), 0); err != nil {
         return err
     }
@@ -212,7 +227,7 @@ func (v *Volume) writeReference(ref Reference) error {
     return nil
 }
 
-func (v *Volume) readBlock(id uint32) (Block, error) {
+func (v Volume) readBlock(id uint32) (Block, error) {
     if _, err := v.blocks.Seek(int64(id*BlockLength), 0); err != nil {
         return Block{}, err
     }
@@ -233,7 +248,7 @@ func (v *Volume) readBlock(id uint32) (Block, error) {
 
 }
 
-func (v *Volume) writeBlock(block Block) error {
+func (v Volume) writeBlock(block Block) error {
     if _, err := v.blocks.Seek(int64(block.id*BlockLength), 0); err != nil {
         return err
     }
@@ -248,7 +263,7 @@ func (v *Volume) writeBlock(block Block) error {
     return nil
 }
 
-func (v *Volume) blockExists(id uint32) (bool, error) {
+func (v Volume) blockExists(id uint32) (bool, error) {
     stat, err := v.blocks.Stat()
     if err != nil {
         return false, err
@@ -257,7 +272,7 @@ func (v *Volume) blockExists(id uint32) (bool, error) {
     return id > EndOfEntry && id <= uint32(stat.Size()/BlockLength), nil
 }
 
-func (v *Volume) nextBlockId() (uint32, error) {
+func (v Volume) nextBlockId() (uint32, error) {
     stat, err := v.blocks.Stat()
     if err != nil {
         return 0, err
