@@ -243,7 +243,7 @@ func (v Volume) readBlock(id uint32) (Block, error) {
         entryId:     types.BigEndian.Uint16(buffer[0:]),
         part:        types.BigEndian.Uint16(buffer[2:]),
         nextBlockId: types.BigEndian.Uint24(buffer[4:]),
-        bytes:       buffer[HeaderLength:],
+        bytes:       buffer[BlockHeaderLength:],
     }, nil
 
 }

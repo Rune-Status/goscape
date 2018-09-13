@@ -7,10 +7,10 @@ import (
 )
 
 const (
-    HeaderLength  = 8
-    BlockLength   = 520
-    BytesPerBlock = BlockLength - HeaderLength
-    EndOfEntry    = 0
+    BlockHeaderLength = 8
+    BlockLength       = 520
+    BytesPerBlock     = BlockLength - BlockHeaderLength
+    EndOfEntry        = 0
 )
 
 type Block struct {

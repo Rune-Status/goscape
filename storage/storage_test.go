@@ -7,6 +7,7 @@ import (
     "bytes"
     "sync"
     "github.com/hadyn/goscape/types"
+    "github.com/hadyn/goscape/internal"
 )
 
 func TestVolumeRead(t *testing.T) {
@@ -22,7 +23,7 @@ func TestVolumeRead(t *testing.T) {
         t.Fatal("failed to open the references file", err)
     }
 
-    contents := sequentialBytes(1000000)
+    contents := internal.SequentialBytes(1000000)
     buffer := make([]byte, BlockLength)
     blockId := uint32(1)
 
@@ -92,7 +93,7 @@ func TestVolumeWriteAppend(t *testing.T) {
 
     volumeId := uint8(0)
     entryId := uint16(0)
-    contents := sequentialBytes(1000000)
+    contents := internal.SequentialBytes(1000000)
     length := uint32(len(contents))
 
     volume := NewVolume(volumeId, references, blocks, &sync.Mutex{})
@@ -156,7 +157,7 @@ func TestVolumeWriteAppend(t *testing.T) {
             read = BytesPerBlock
         }
 
-        copy(compare[offset:], buffer[HeaderLength:HeaderLength+read])
+        copy(compare[offset:], buffer[BlockHeaderLength:BlockHeaderLength+read])
 
         blockId = nextBlockId
         offset += read
@@ -165,12 +166,4 @@ func TestVolumeWriteAppend(t *testing.T) {
     if !bytes.Equal(compare, contents) {
         t.Error("bytes mismatch")
     }
-}
-
-func sequentialBytes(len int) []byte {
-    buffer := make([]byte, len)
-    for i := 0; i < len; i++ {
-        buffer[i] = uint8(i)
-    }
-    return buffer
 }
